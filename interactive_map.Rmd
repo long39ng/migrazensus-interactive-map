@@ -18,14 +18,14 @@ migrazensus <- read_csv(
     wknr_2021, wkname_2021, landid,
     mighintergrund_anteil, mighintergrund_absolut,
     wbmighintergrund_anteil, wbmighintergrund_absolut,
-    ends_with("_2"), -gueltige_2
+    ends_with("_1"), -gueltige_1
   )
 ) |>
   mutate(
     wknr_2021 = as.integer(wknr_2021),
     landid = as.integer(landid)
   ) |>
-  pivot_longer(ends_with("_2"), names_to = "partei", values_to = "stimmen") |>
+  pivot_longer(ends_with("_1"), names_to = "partei", values_to = "stimmen") |>
   group_by(wknr_2021) |>
   slice_max(stimmen, n = 2) |>
   ungroup() |>
