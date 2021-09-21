@@ -1,0 +1,189 @@
+---
+title: "Untitled"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+library(sf)
+library(leaflet)
+```
+
+```{r data, results='hide'}
+migrazensus <- read_csv(
+  here::here("migrazensus_v0.2.csv"),
+  col_select = c(
+    wknr_2021, wkname_2021, landid,
+    mighintergrund_anteil, mighintergrund_absolut,
+    wbmighintergrund_anteil, wbmighintergrund_absolut,
+    ends_with("_2"), -gueltige_2
+  )
+) |>
+  mutate(
+    wknr_2021 = as.integer(wknr_2021),
+    landid = as.integer(landid)
+  ) |>
+  pivot_longer(ends_with("_2"), names_to = "partei", values_to = "stimmen") |>
+  group_by(wknr_2021) |>
+  slice_max(stimmen, n = 2) |>
+  ungroup() |>
+  mutate(partei = rep(paste0("partei_", 1:2), 299)) |>
+  pivot_wider(names_from = partei, values_from = stimmen) |>
+  mutate(
+    machtpotenzial = as.integer(wbmighintergrund_absolut - (partei_1 - partei_2)),
+    nichtwbmig_anteil = 1 - wbmighintergrund_absolut / mighintergrund_absolut,
+    across(ends_with("_anteil"), \(x) x * 100)
+  ) |>
+  select(-c(starts_with("partei"), ends_with("_absolut")))
+
+variables <- tibble(
+  varname = names(select(migrazensus, -c(wknr_2021:landid))),
+  percent = c(TRUE, TRUE, FALSE, TRUE),
+  label = c(
+    "Anteil Personen mit Migrationshintergrund",
+    "Anteil wahlberechtigter Personen mit Migrationshintergrund",
+    "Machtpotenzial wahlberechtigter Personen mit Migrationshintergrund",
+    "Anteil nicht-wahlberechtigter Personen mit Migrationshintergrund"
+  ),
+  description = c(
+    "Prozentualer Anteil der Personen mit einem Migrationshintergrund
+gemessen an der Gesamtbevölkerung der Bundesrepublik.",
+    "Prozentualer Anteil der wahlberechtigten Personen mit einem
+Migrationshintergrund gemessen an der Gesamtzahl der wahlberechtigten
+Bevölkerung.",
+    "Machtpotenzial beschreibt die Differenz zwischen der Anzahl der wahlberechtigten Personen mit einem Migrationshintergrund und der Differenz der absoluten Stimmenzahlen zwischen der erst- und zweitplatzierten Partei. Übersteigt die Gesamtzahl der wahlberechtigten Personen mit einem Migrationshintergrund die Differenz der Erststimmen zwischen den erst- und zweitplatzierten Parteien, so birgt diese Wählergruppe ein positives Machtpotenzial und kann somit einen erheblichen Einfluss über den Wahlausgang ausüben. Zweitplatzierte Parteien hätten somit die Möglichkeit, die Wahl für sich zu entscheiden. Betrachtet wurden die Stimmen der letzten Bundestagswahl 2017.",
+    "Prozentualer Anteil der nicht-wahlberechtigten Personen mit einem
+Migrationshintergrund gemessen an der Gesamtzahl der Menschen mit einem Migrationshintergrund."
+  )
+)
+
+migrazensus_sf <- st_read(
+  here::here("shapefiles/Geometrie_Wahlkreise_19DBT_geo.shp"),
+  as_tibble = TRUE
+) |>
+  select(WKR_NR, geometry) |>
+  left_join(migrazensus, by = c("WKR_NR" = "wknr_2021")) |>
+  relocate(geometry, .after = everything())
+```
+
+## {.tabset .tabset-pills .tabcontent}
+
+```{r map, results='asis'}
+# Provide JS dependencies for asis chunk: https://github.com/rstudio/rmarkdown/issues/1877#issuecomment-678996452
+leaflet() |>
+  leafem::addHomeButton(st_bbox(migrazensus_sf)) |>
+  knitr::knit_print() |>
+  attr("knit_meta") |>
+  knitr::knit_meta_add() |>
+  invisible()
+
+for (v in variables$varname) {
+  unit <- if (variables$percent[variables$varname == v]) " %" else ""
+  
+  leaflet_pal <- colorNumeric(
+    palette = "BrBG",
+    domain = if (min(migrazensus[[v]]) < 0) {
+      # Diverging palette
+      max(range(migrazensus[[v]])) * c(-1, 1)
+    } else {
+      # Sequential palette
+      c(min(migrazensus[[v]]) * 2 - max(migrazensus[[v]]), max(migrazensus[[v]]))
+    },
+    na.color = "#cccccc"
+  )
+  
+  cat("### ", variables$label[variables$varname == v], "\n\n")
+
+  cat(knitr::knit_print(
+    migrazensus_sf |>
+      rename(value = all_of(v)) |>
+      mutate(label = paste0("<strong>", wkname_2021, "</strong><br>", round(value, 2), !!unit)) |>
+      leaflet(
+        width = "100%", height = "75vh",
+        options = leafletOptions(zoomDelta = .25, zoomSnap = .25)
+      ) |>
+      addTiles(
+        urlTemplate = "",
+        attribution = "<a href='https://doi.org/10.7910/DVN/GPEV4P'>Migrazensus</a>"
+      ) |>
+      addTiles(
+        urlTemplate = "",
+        attribution = "erstellt in Kooperation mit <a href='https://correlaid.org'>CorrelAid</a> von <a href='https://github.com/long39ng'>Long Nguyen</a> und <a href='https://github.com/anneumann1'>Andreas Neumann</a>"
+      ) |>
+      addPolygons(
+        fillColor = ~ leaflet_pal(value),
+        fillOpacity = 1,
+        color = "#aaaaaa", weight = .5, opacity = 1,
+        label = ~ lapply(label, htmltools::HTML),
+        labelOptions = labelOptions(
+          textsize = "14px",
+          style = list("text-align" = "right")
+        ),
+        highlightOptions = highlightOptions(
+          color = "#444444", weight = 2, bringToFront = TRUE
+        )
+      ) |>
+      addLegend(
+        pal = leaflet_pal,
+        values = ~value,
+        opacity = 1,
+        labFormat = labelFormat(suffix = unit, big.mark = ""),
+        title = NULL
+      ) |>
+      leafem::addHomeButton(st_bbox(migrazensus_sf), "\u21ba", "topleft")
+  ))
+
+  cat("\n\n")
+
+  cat(variables$description[variables$varname == v], "\n\n")
+}
+```
+
+```{css}
+/* vertical tabset: https://stackoverflow.com/a/67540036 */
+.container-fluid.main-container{
+  max-width: 75%
+}
+.tabset{
+  display: flex;
+}
+.nav.nav-pills {
+  flex: 25%;
+  width: 100%;
+  margin-right: 1em;
+}
+.nav.nav-pills li{
+  width: 100%;
+}
+.tab-content{
+  flex: 75%;
+  width: 100%
+}
+
+/* leaflet reset zoom button */
+.leaflet-bar button {
+  font-size: initial;
+  width: 30px;
+  height: 30px;
+  line-height: 30px;
+  background-color: #fff;
+  color: black;
+  opacity: unset;
+  border-radius: 2px;
+}
+.leaflet-bar button:hover {
+  background-color: #f4f4f4;
+  text-decoration: none;
+  opacity: unset;
+}
+
+.leaflet-container {
+    background-color: #fff;
+}
+
+.title.toc-ignore {
+    visibility: hidden;
+}
+```
