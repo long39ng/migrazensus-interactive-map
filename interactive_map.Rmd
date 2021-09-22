@@ -99,7 +99,10 @@ for (v in variables$varname) {
   cat(knitr::knit_print(
     migrazensus_sf |>
       rename(value = all_of(v)) |>
-      mutate(label = paste0("<strong>", wkname_2021, "</strong><br>", round(value, 2), !!unit)) |>
+      mutate(
+        wkname_2021 = str_wrap(wkname_2021, 25) |> str_replace_all("\n", "<br>"),
+        label = paste0("<strong>", wkname_2021, "</strong><br>", round(value, 2), !!unit)
+      ) |>
       leaflet(
         width = "100%", height = "75vh",
         options = leafletOptions(zoomDelta = .25, zoomSnap = .25)
@@ -143,9 +146,6 @@ for (v in variables$varname) {
 
 ```{css}
 /* vertical tabset: https://stackoverflow.com/a/67540036 */
-.container-fluid.main-container{
-  max-width: 75%
-}
 .tabset{
   display: flex;
 }
@@ -172,6 +172,7 @@ for (v in variables$varname) {
   color: black;
   opacity: unset;
   border-radius: 2px;
+  padding: unset;
 }
 .leaflet-bar button:hover {
   background-color: #f4f4f4;
@@ -180,11 +181,12 @@ for (v in variables$varname) {
 }
 
 .leaflet-container {
-    background-color: #fff;
+  background-color: #fff;
 }
 
-.title.toc-ignore {
-    visibility: hidden;
+.container-fluid.main-container {
+  margin-left: unset;
+  margin-right: unset;
 }
 ```
 
