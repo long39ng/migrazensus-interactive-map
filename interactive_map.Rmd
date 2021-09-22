@@ -120,10 +120,7 @@ for (v in variables$varname) {
         fillOpacity = 1,
         color = "#aaaaaa", weight = .5, opacity = 1,
         label = ~ lapply(label, htmltools::HTML),
-        labelOptions = labelOptions(
-          textsize = "14px",
-          style = list("text-align" = "right")
-        ),
+        labelOptions = labelOptions(textsize = "14px"),
         highlightOptions = highlightOptions(
           color = "#444444", weight = 2, bringToFront = TRUE
         )
